@@ -1,19 +1,21 @@
 {
   "name": "Open in SkipCut",
   "description": "Right-click on a YouTube link to open it in SkipCut.",
-  "version": "1.0.2",
+  "version": "1.1.1",
   "manifest_version": 3,
   "background": {
     "service_worker": "background.js"
   },
   "permissions": [
+    "alarms",
     "contextMenus",
+    "storage",
     "tabs"
   ],
   "content_scripts": [
     {
       "matches": [
-        "*://*.youtube.com/*"
+        "<all_urls>"
       ],
       "js": [
         "content.js"

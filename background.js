@@ -57,14 +57,14 @@ function getKeepHistorySetting(callback) {
   });
 }
 
-function openInSkipCut(url) {
+function openInSkipCut(url, forceHistorySignal = false) {
   const skipCutUrl = toSkipCutUrl(url);
   if (!skipCutUrl) return;
 
   chrome.tabs.create({ url: skipCutUrl });
 
   getKeepHistorySetting((keepHistorySignal) => {
-    if (keepHistorySignal) {
+    if (forceHistorySignal || keepHistorySignal) {
       keepYoutubeHistorySignal(url);
     }
   });
@@ -103,6 +103,10 @@ chrome.contextMenus.onClicked.addListener((info) => {
 chrome.runtime.onMessage.addListener((request) => {
   if (request.action === 'openSkipCut' && request.url) {
     openInSkipCut(request.url);
+  }
+
+  if (request.action === 'openSkipCutShortcut' && request.url) {
+    openInSkipCut(request.url, true);
   }
 });
 

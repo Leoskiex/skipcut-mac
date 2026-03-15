@@ -12,6 +12,7 @@ Works from the right-click menu **or** with a handy _Ctrl + left-click_ shortcut
 - **Context-menu action** – “Open in SkipCut” appears whenever you right-click a YouTube link.
 - **Keyboard shortcut** – Hold **Ctrl** (Cmd ⌘ on macOS) and left-click a YouTube link on any page (including `youtu.be` links) to jump straight to SkipCut.
 - **Optional personalization mode** – Toggle **“Keep YouTube history signal (45s)”** in the context menu to briefly open the original YouTube video in a background tab so your recommendations/history can keep learning.
+- **Inline SkipCut button on videos** – On YouTube pages, each video thumbnail gets a **SkipCut** button. Clicking it opens SkipCut in a new tab and also opens YouTube in a background tab for 45 seconds to preserve personalization signals.
 - **No background polling** – the extension does nothing until you interact with a YouTube link, so it’s lightweight and private.
 
 ---

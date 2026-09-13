@@ -144,7 +144,7 @@ function sendNotInterested(token, pill) {
       return JSON.parse(txt || '{}');
     });
   }).then(() => {
-    pill.textContent = '已移除';
+    pill.textContent = '已不收';
     pill.style.color = '#8b9bb0';
     pill.title = `已回報 YouTube（${new Date().toLocaleTimeString()}）`;
   }).catch(() => {

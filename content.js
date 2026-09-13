@@ -52,47 +52,50 @@ function findDismissInfo(card) {
   return hit;
 }
 
-// the card's 3-dot "更多/More" menu button (shadow-aware); falls back to #actions then whole doc
-function findMenuButton(card) {
-  const scopes = [];
-  if (card) scopes.push(card);
-  const actions = document.querySelector('#actions, .ytp-share-button, #action-buttons');
-  if (actions) scopes.push(actions);
-  // watch page: the player's ⋮ lives inside ytd-player's shadow root
-  const player = document.querySelector('ytd-player');
-  if (player && player.shadowRoot) {
-    const pActions = player.shadowRoot.querySelector('#actions, #action-buttons, .ytp-share-button');
-    if (pActions) scopes.push(pActions);
-    scopes.push(player.shadowRoot);
-  }
-  scopes.push(document.body);
-  const seen = [];
-  const test = (el) => {
-    if (el.tagName !== 'BUTTON') return false;
-    const aria = (el.getAttribute && el.getAttribute('aria-label')) || '';
-    return /更多|more|menu/i.test(aria);
-  };
-  const walk = (node) => {
+// collect all elements, piercing every open shadow root (bounded)
+function allElements(root, cap) {
+  const out = [];
+  const q = [root];
+  while (q.length && out.length < cap) {
+    const node = q.shift();
+    if (!node) continue;
     for (const el of node.children || []) {
-      if (seen.length++ >= 400) return null;
-      if (test(el)) return el;
-      if (el.shadowRoot) { const r = walk(el.shadowRoot); if (r) return r; }
+      if (out.length >= cap) return out;
+      out.push(el);
+      if (el.shadowRoot) q.push(el.shadowRoot);
     }
-    return null;
-  };
-  for (const s of scopes) {
-    if (!s) continue;
-    const hit = walk(s);
-    if (hit) return hit;
-    seen.length = 0;
+  }
+  return out;
+}
+
+// the "更多 / More" context-menu button (3-dot). Works on feed cards AND the watch-page player.
+function findMenuButton(card) {
+  // fast path: the watch-page player's 3-dot lives in ytd-player's shadow root
+  const roots = [document.documentElement];
+  if (card) roots.unshift(card);
+  for (const root of roots) {
+    const pool = allElements(root, 6000);
+    for (const el of pool) {
+      if (!el.hasAttribute) continue;
+      if (el.id === 'ytp-context-menu-button' ||
+          el.classList && el.classList.contains('ytp-context-menu-button')) return el;
+      const aria = (el.getAttribute && el.getAttribute('aria-label')) || '';
+      if (el.tagName === 'BUTTON' && /^(更多|More)$/i.test(aria.trim())) return el;
+    }
   }
   return null;
 }
 
-// menu items land in a body-level overlay once the menu is open
+// menu items (with data-feedback-token) appear once the menu opens — may be in a shadow root
 function findTokenInDoc() {
-  return Array.from(document.querySelectorAll('[data-feedback-token]'))
-    .find((el) => /不感興趣|not interested/i.test(el.textContent || '')) || null;
+  const pool = allElements(document.documentElement, 8000);
+  for (const el of pool) {
+    if (el.hasAttribute && el.hasAttribute('data-feedback-token')) {
+      const t = (el.textContent || '').trim();
+      if (/不感興趣|not interested/i.test(t) || /不感興趣|not interested/i.test(el.getAttribute('aria-label') || '')) return el;
+    }
+  }
+  return null;
 }
 
 function waitForToken(ms) {

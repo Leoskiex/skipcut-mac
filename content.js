@@ -68,20 +68,56 @@ function allElements(root, cap) {
   return out;
 }
 
+// force the watch-page player's control bar (and its ⋮ button) to render
+function revealPlayerControls() {
+  return new Promise((resolve) => {
+    const p = document.querySelector('ytd-player');
+    const hover = (el) => {
+      if (!el) return;
+      el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      el.dispatchEvent(new MouseEvent('mouseenter', { bubbles: true }));
+    };
+    // the <video> lives in the shadow root; p.video is the real element
+    hover(p ? p.video : null);
+    hover(document.querySelector('video'));
+    hover(p ? p.querySelector('#player') : null);
+    hover(p);
+    // also poke the shadow control bar directly
+    if (p && p.shadowRoot) {
+      hover(p.shadowRoot.querySelector('#controls, #ytd-watch-ability-renderer #actions'));
+    }
+    setTimeout(resolve, 350);
+  });
+}
+
 // the "更多 / More" context-menu button (3-dot). Works on feed cards AND the watch-page player.
 function findMenuButton(card) {
-  // fast path: the watch-page player's 3-dot lives in ytd-player's shadow root
+  const match = (el) => {
+    if (!el.hasAttribute) return false;
+    if (el.id === 'ytp-context-menu-button' ||
+        el.classList && el.classList.contains('ytp-context-menu-button')) return true;
+    const aria = (el.getAttribute && el.getAttribute('aria-label')) || '';
+    return el.tagName === 'BUTTON' && /^(更多|More)$/i.test(aria.trim());
+  };
+  // watch page fast path: look straight in ytd-player's shadow root (small, won't exhaust a big BFS)
+  const p = document.querySelector('ytd-player');
+  if (p && p.shadowRoot) {
+    const inShadow = allElements(p.shadowRoot, 4000);
+    const hit = inShadow.find(match);
+    if (hit) return hit;
+    const btns = inShadow.filter((e) => e.tagName === 'BUTTON');
+    const labels = btns.slice(0, 14).map((e) => (e.getAttribute('aria-label') || e.id || e.className || '?').toString().slice(0, 28));
+    console.log('[skipcut] player shadow: buttons=', btns.length, 'labels=', JSON.stringify(labels));
+  } else {
+    console.log('[skipcut] player shadow: player=', !!p, 'shadowRoot=', !!(p && p.shadowRoot));
+  }
+  // feed cards / other: full-document shadow-piercing search
   const roots = [document.documentElement];
   if (card) roots.unshift(card);
   for (const root of roots) {
     const pool = allElements(root, 6000);
-    for (const el of pool) {
-      if (!el.hasAttribute) continue;
-      if (el.id === 'ytp-context-menu-button' ||
-          el.classList && el.classList.contains('ytp-context-menu-button')) return el;
-      const aria = (el.getAttribute && el.getAttribute('aria-label')) || '';
-      if (el.tagName === 'BUTTON' && /^(更多|More)$/i.test(aria.trim())) return el;
-    }
+    const hit = pool.find(match);
+    if (hit) return hit;
   }
   return null;
 }
@@ -110,7 +146,14 @@ function waitForToken(ms) {
 }
 
 function closeMenus() {
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+  const esc = (el) => {
+    if (!el) return;
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', keyCode: 27, which: 27, bubbles: true }));
+  };
+  esc(document);
+  esc(document.activeElement);
+  const p = document.querySelector('ytd-player');
+  if (p && p.shadowRoot) esc(p.shadowRoot);
 }
 
 // page's own innertube key + context (never from outside, never stored)
@@ -291,20 +334,24 @@ function addNotInterestedBadge(link) {
         if (token) {
           sendNotInterested(token, btn);
         } else {
-          // open the card's ⋮ menu, wait for its items (with tokens) to mount
-          const menuBtn = findMenuButton(scope);
-          if (menuBtn && typeof menuBtn.click === 'function') {
-            menuBtn.click();
-            waitForToken(2500).then((el) => {
-              closeMenus();
-              const t = el && el.getAttribute ? el.getAttribute('data-feedback-token') : '';
-              console.log('[skipcut] menu token:', t ? t.slice(0, 32) + '…' : null);
-              if (t) sendNotInterested(t, btn);
-              else console.log('[skipcut] no feedback item found in menu');
-            });
-          } else {
-            console.log('[skipcut] menu button not found');
-          }
+          // Watch page: the ⋮ button lives in the player's control bar, which only
+          // renders while the controls are showing. Hover the video to force it,
+          // then open the card's ⋮ menu, wait for its items (with tokens) to mount.
+          revealPlayerControls().then(() => {
+            const menuBtn = findMenuButton(scope);
+            if (menuBtn && typeof menuBtn.click === 'function') {
+              menuBtn.click();
+              waitForToken(4000).then((el) => {
+                closeMenus();
+                const t = el && el.getAttribute ? el.getAttribute('data-feedback-token') : '';
+                console.log('[skipcut] menu token:', t ? t.slice(0, 32) + '…' : null);
+                if (t) sendNotInterested(t, btn);
+                else console.log('[skipcut] no feedback item found in menu');
+              });
+            } else {
+              console.log('[skipcut] menu button not found');
+            }
+          });
         }
       }
     });

@@ -32,14 +32,65 @@ function deepFind(scope, test, cap) {
   return walk(scope);
 }
 
-// YouTube's own "不感興趣 / Not interested" control inside this card
-function findNativeDismiss(card) {
+// YouTube's own "不感興趣 / Not interested" item, and its data-feedback-token
+function findDismissInfo(card) {
   const root = card && card.closest ? (card.closest('rich-item') || card) : card;
-  return deepFind(root, (el) => {
-    if (el.id === 'dismiss-button') return true;
-    const aria = (el.getAttribute && el.getAttribute('aria-label')) || '';
-    return /不感興趣|not interested/i.test(aria) || /不感興趣|not interested/i.test((el.textContent || '').trim());
-  }, 400);
+  let hit = null;
+  const seen = [];
+  const walk = (node) => {
+    for (const el of node.children || []) {
+      if (seen.length++ >= 400) return;
+      if (!hit && el.hasAttribute && el.hasAttribute('data-feedback-token')) {
+        const aria = (el.getAttribute && el.getAttribute('aria-label')) || '';
+        const t = (el.textContent || '').trim();
+        if (/不感興趣|not interested/i.test(aria) || /不感興趣|not interested/i.test(t)) hit = el;
+      }
+      if (el.shadowRoot) walk(el.shadowRoot);
+    }
+  };
+  walk(root);
+  return hit;
+}
+
+// page's own innertube key + context (never from outside, never stored)
+function appInnerTube() {
+  const app = document.querySelector('ytd-app');
+  if (!app) return null;
+  const key = app.getAttribute('innertube-api-key') || app.innertubeApiKey || '';
+  if (!key) return null;
+  let context = null;
+  try {
+    const raw = app.getAttribute('innertube-context') || app.innertubeContext || '';
+    if (raw) context = JSON.parse(raw);
+  } catch (e) { context = null; }
+  return { key, context };
+}
+
+// call YouTube's own feedback endpoint with the card's token
+function sendNotInterested(token, pill) {
+  const it = appInnerTube();
+  if (!it) { pill.textContent = '已不收'; pill.style.color = '#8b9bb0'; return; }
+  const ver = it.context && it.context.client && it.context.client.clientVersion;
+  const context = it.context || {
+    client: { clientName: 'WEB', clientVersion: ver || '2.20260101.00.00', hl: document.documentElement.lang || 'zh-TW' }
+  };
+  fetch(`https://www.youtube.com/youtubei/v1/feedback?key=${encodeURIComponent(it.key)}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    body: JSON.stringify({ context, feedbackToken: token, isFeedbackGiven: true })
+  }).then((r) => {
+    if (!r.ok) throw new Error('http ' + r.status);
+    return r.json();
+  }).then(() => {
+    pill.textContent = '已移除';
+    pill.style.color = '#8b9bb0';
+    pill.title = `已回報 YouTube（${new Date().toLocaleTimeString()}）`;
+  }).catch(() => {
+    pill.textContent = '已不收';
+    pill.style.color = '#8b9bb0';
+    pill.title = '本地已標記；YouTube 回報失敗，可用卡片的 ⋮ 手動處理';
+  });
 }
 
 function notInterestedStore(cb) {
@@ -167,9 +218,17 @@ function addNotInterestedBadge(link) {
         || link.parentElement;
       if (card && card.style) card.style.opacity = on ? '.25' : '1';
 
-      // fire YouTube's own dismiss so the feed re-shapes
-      const native = findNativeDismiss(card || link.parentElement);
-      if (native && typeof native.click === 'function') native.click();
+      // real signal: POST the card's feedback token to YouTube's own endpoint
+      if (on) {
+        const item = findDismissInfo(card || link.parentElement);
+        const token = item && item.getAttribute ? item.getAttribute('data-feedback-token') : '';
+        if (token) sendNotInterested(token, btn);
+        else {
+          const native = deepFind(card || link.parentElement,
+            (el) => el.id === 'dismiss-button' || /不感興趣|not interested/i.test(el.textContent || ''), 400);
+          if (native && typeof native.click === 'function') native.click();
+        }
+      }
     });
   });
 

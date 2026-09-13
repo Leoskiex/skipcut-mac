@@ -1,7 +1,7 @@
 {
   "name": "Open in SkipCut",
   "description": "Open in SkipCut + 不收 (not-interested) button on YouTube cards.",
-  "version": "1.4.2",
+  "version": "1.4.3",
   "manifest_version": 3,
   "background": {
     "service_worker": "background.js"

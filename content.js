@@ -52,22 +52,41 @@ function findDismissInfo(card) {
   return hit;
 }
 
-// the card's 3-dot "更多/More" menu button (shadow-aware)
+// the card's 3-dot "更多/More" menu button (shadow-aware); falls back to #actions then whole doc
 function findMenuButton(card) {
-  let hit = null;
+  const scopes = [];
+  if (card) scopes.push(card);
+  const actions = document.querySelector('#actions, .ytp-share-button, #action-buttons');
+  if (actions) scopes.push(actions);
+  // watch page: the player's ⋮ lives inside ytd-player's shadow root
+  const player = document.querySelector('ytd-player');
+  if (player && player.shadowRoot) {
+    const pActions = player.shadowRoot.querySelector('#actions, #action-buttons, .ytp-share-button');
+    if (pActions) scopes.push(pActions);
+    scopes.push(player.shadowRoot);
+  }
+  scopes.push(document.body);
   const seen = [];
+  const test = (el) => {
+    if (el.tagName !== 'BUTTON') return false;
+    const aria = (el.getAttribute && el.getAttribute('aria-label')) || '';
+    return /更多|more|menu/i.test(aria);
+  };
   const walk = (node) => {
     for (const el of node.children || []) {
-      if (seen.length++ >= 400) return;
-      if (hit === null && el.tagName === 'BUTTON') {
-        const aria = (el.getAttribute && el.getAttribute('aria-label')) || '';
-        if (/更多|more|menu/i.test(aria)) hit = el;
-      }
-      if (el.shadowRoot) walk(el.shadowRoot);
+      if (seen.length++ >= 400) return null;
+      if (test(el)) return el;
+      if (el.shadowRoot) { const r = walk(el.shadowRoot); if (r) return r; }
     }
+    return null;
   };
-  walk(card || document.body);
-  return hit;
+  for (const s of scopes) {
+    if (!s) continue;
+    const hit = walk(s);
+    if (hit) return hit;
+    seen.length = 0;
+  }
+  return null;
 }
 
 // menu items land in a body-level overlay once the menu is open

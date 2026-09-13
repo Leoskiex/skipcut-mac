@@ -52,6 +52,45 @@ function findDismissInfo(card) {
   return hit;
 }
 
+// the card's 3-dot "更多/More" menu button (shadow-aware)
+function findMenuButton(card) {
+  let hit = null;
+  const seen = [];
+  const walk = (node) => {
+    for (const el of node.children || []) {
+      if (seen.length++ >= 400) return;
+      if (hit === null && el.tagName === 'BUTTON') {
+        const aria = (el.getAttribute && el.getAttribute('aria-label')) || '';
+        if (/更多|more|menu/i.test(aria)) hit = el;
+      }
+      if (el.shadowRoot) walk(el.shadowRoot);
+    }
+  };
+  walk(card || document.body);
+  return hit;
+}
+
+// menu items land in a body-level overlay once the menu is open
+function findTokenInDoc() {
+  return Array.from(document.querySelectorAll('[data-feedback-token]'))
+    .find((el) => /不感興趣|not interested/i.test(el.textContent || '')) || null;
+}
+
+function waitForToken(ms) {
+  return new Promise((resolve) => {
+    const t0 = Date.now();
+    const iv = setInterval(() => {
+      const el = findTokenInDoc();
+      if (el) { clearInterval(iv); resolve(el); }
+      else if (Date.now() - t0 >= ms) { clearInterval(iv); resolve(null); }
+    }, 80);
+  });
+}
+
+function closeMenus() {
+  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true }));
+}
+
 // page's own innertube key + context (never from outside, never stored)
 function appInnerTube() {
   const app = document.querySelector('ytd-app');
@@ -80,8 +119,11 @@ function sendNotInterested(token, pill) {
     credentials: 'include',
     body: JSON.stringify({ context, feedbackToken: token, isFeedbackGiven: true })
   }).then((r) => {
-    if (!r.ok) throw new Error('http ' + r.status);
-    return r.json();
+    return r.text().then((txt) => {
+      console.log('[skipcut] feedback http', r.status, (txt || '').slice(0, 300));
+      if (!r.ok) throw new Error('http ' + r.status + ' ' + txt.slice(0, 160));
+      return JSON.parse(txt || '{}');
+    });
   }).then(() => {
     pill.textContent = '已移除';
     pill.style.color = '#8b9bb0';
@@ -220,13 +262,27 @@ function addNotInterestedBadge(link) {
 
       // real signal: POST the card's feedback token to YouTube's own endpoint
       if (on) {
-        const item = findDismissInfo(card || link.parentElement);
-        const token = item && item.getAttribute ? item.getAttribute('data-feedback-token') : '';
-        if (token) sendNotInterested(token, btn);
-        else {
-          const native = deepFind(card || link.parentElement,
-            (el) => el.id === 'dismiss-button' || /不感興趣|not interested/i.test(el.textContent || ''), 400);
-          if (native && typeof native.click === 'function') native.click();
+        const scope = card || link.parentElement;
+        const item = findDismissInfo(scope);
+        let token = item && item.getAttribute ? item.getAttribute('data-feedback-token') : '';
+        console.log('[skipcut] inline token:', token ? token.slice(0, 32) + '…' : null);
+        if (token) {
+          sendNotInterested(token, btn);
+        } else {
+          // open the card's ⋮ menu, wait for its items (with tokens) to mount
+          const menuBtn = findMenuButton(scope);
+          if (menuBtn && typeof menuBtn.click === 'function') {
+            menuBtn.click();
+            waitForToken(2500).then((el) => {
+              closeMenus();
+              const t = el && el.getAttribute ? el.getAttribute('data-feedback-token') : '';
+              console.log('[skipcut] menu token:', t ? t.slice(0, 32) + '…' : null);
+              if (t) sendNotInterested(t, btn);
+              else console.log('[skipcut] no feedback item found in menu');
+            });
+          } else {
+            console.log('[skipcut] menu button not found');
+          }
         }
       }
     });

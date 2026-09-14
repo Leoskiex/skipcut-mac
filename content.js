@@ -145,6 +145,46 @@ function waitForToken(ms) {
   });
 }
 
+// find the "not interested" feedback token in the page's ytInitialData (watch page, where the
+// player shadow root is closed and unreachable). Tokens are near their label in the JSON.
+function findTokenInData() {
+  try {
+    let data = window.ytInitialData;
+    if (!data) {
+      const m = document.documentElement.innerHTML.match(/ytInitialData\s*=\s*(\{.+?\})\s*;?\s*<\/script>/s)
+        || document.documentElement.innerHTML.match(/ytInitialData\s*=\s*(\{.+?\})\s*;/s);
+      if (!m) return null;
+      data = JSON.parse(m[1]);
+    }
+    const labels = Array.isArray(data) ? data : Object.values(data);
+    const s = JSON.stringify(labels);
+    // locate the label, then the nearest feedbackToken after it
+    let best = null, bestIdx = Infinity;
+    const tokenRe = /"feedbackToken"\s*:\s*"([^"]{20,})"/g;
+    let tm;
+    const positions = [];
+    while ((tm = tokenRe.exec(s)) !== null) positions.push({ i: tm.index, tok: tm[1] });
+    // find label positions (each language form)
+    for (const lab of ['不感興趣', 'Not interested', 'not interested', 'NotInterested']) {
+      let idx = 0;
+      while (true) {
+        idx = s.indexOf(lab, idx);
+        if (idx < 0) break;
+        const after = positions.filter((p) => p.i > idx);
+        if (after.length) {
+          const near = after[0];
+          // only accept a token within a reasonable distance (same menu item)
+          if (near.i - idx < 4000 && near.i < bestIdx) { best = near.tok; bestIdx = near.i; }
+        }
+        idx += lab.length;
+      }
+    }
+    return best;
+  } catch (e) {
+    return null;
+  }
+}
+
 function closeMenus() {
   const esc = (el) => {
     if (!el) return;
@@ -335,21 +375,26 @@ function addNotInterestedBadge(link) {
           sendNotInterested(token, btn);
         } else {
           // Watch page: the ⋮ button lives in the player's control bar, which only
-          // renders while the controls are showing. Hover the video to force it,
-          // then open the card's ⋮ menu, wait for its items (with tokens) to mount.
+          // renders while the controls are showing AND the player's shadow root is
+          // closed to content scripts — so click the ⋮ when reachable (feed cards),
+          // otherwise pull the "not interested" token straight from ytInitialData.
           revealPlayerControls().then(() => {
             const menuBtn = findMenuButton(scope);
             if (menuBtn && typeof menuBtn.click === 'function') {
               menuBtn.click();
               waitForToken(4000).then((el) => {
                 closeMenus();
-                const t = el && el.getAttribute ? el.getAttribute('data-feedback-token') : '';
+                const t = (el && el.getAttribute && el.getAttribute('data-feedback-token')) || findTokenInData();
                 console.log('[skipcut] menu token:', t ? t.slice(0, 32) + '…' : null);
                 if (t) sendNotInterested(t, btn);
                 else console.log('[skipcut] no feedback item found in menu');
               });
             } else {
-              console.log('[skipcut] menu button not found');
+              // player shadow root closed (detail page) — use the data token
+              const t = findTokenInData();
+              console.log('[skipcut] data token:', t ? t.slice(0, 32) + '…' : null);
+              if (t) sendNotInterested(t, btn);
+              else console.log('[skipcut] menu button not found');
             }
           });
         }

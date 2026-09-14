@@ -219,7 +219,13 @@ function appInnerTube() {
 // call YouTube's own feedback endpoint with the card's token
 function sendNotInterested(token, pill) {
   const it = appInnerTube();
-  if (!it) { pill.textContent = '已不收'; pill.style.color = '#8b9bb0'; return; }
+  if (!it) {
+    console.log('[skipcut] feedback skipped: no innertube key/context on <ytd-app>');
+    pill.textContent = '已不收'; pill.style.color = '#8b9bb0';
+    pill.title = '本地已標記；找不到 innertube key，無法回報 YouTube';
+    return;
+  }
+  console.log('[skipcut] innertube key ok:', (it.key || '').slice(0, 8) + '…', '| context client:', it.context && it.context.client && it.context.client.clientName || '(default)');
   const ver = it.context && it.context.client && it.context.client.clientVersion;
   const context = it.context || {
     client: { clientName: 'WEB', clientVersion: ver || '2.20260101.00.00', hl: document.documentElement.lang || 'zh-TW' }
@@ -236,8 +242,9 @@ function sendNotInterested(token, pill) {
       return JSON.parse(txt || '{}');
     });
   }).then(() => {
+    // success: label -> 已不收, soft green tint marks it as sent to YouTube
     pill.textContent = '已不收';
-    pill.style.color = '#8b9bb0';
+    pill.style.color = '#7fd6a1';
     pill.title = `已回報 YouTube（${new Date().toLocaleTimeString()}）`;
   }).catch((e) => {
     const msg = (e && (e.message || String(e))) || 'unknown';

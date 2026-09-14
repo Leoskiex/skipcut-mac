@@ -239,10 +239,13 @@ function sendNotInterested(token, pill) {
     pill.textContent = '已不收';
     pill.style.color = '#8b9bb0';
     pill.title = `已回報 YouTube（${new Date().toLocaleTimeString()}）`;
-  }).catch(() => {
+  }).catch((e) => {
+    const msg = (e && (e.message || String(e))) || 'unknown';
+    const blocked = /failed|network|abort|timeout|blocked/i.test(msg);
+    console.log('[skipcut] feedback POST failed:', msg, blocked ? '(likely blocked by an ad/content blocker — allowlist youtube.com / *stats*, *feedback* in uBlock)' : '(check the token / key)');
     pill.textContent = '已不收';
     pill.style.color = '#8b9bb0';
-    pill.title = '本地已標記；YouTube 回報失敗，可用卡片的 ⋮ 手動處理';
+    pill.title = '本地已標記；YouTube 回報失敗（可能被擴展攔截），可用卡片的 ⋮ 手動處理';
   });
 }
 

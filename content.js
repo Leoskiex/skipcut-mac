@@ -158,23 +158,29 @@ function findTokenInData() {
     }
     const labels = Array.isArray(data) ? data : Object.values(data);
     const s = JSON.stringify(labels);
-    // locate the label, then the nearest feedbackToken after it
-    let best = null, bestIdx = Infinity;
+    let best = null, bestIdx = Infinity, bestGap = Infinity;
     const tokenRe = /"feedbackToken"\s*:\s*"([^"]{20,})"/g;
     let tm;
     const positions = [];
     while ((tm = tokenRe.exec(s)) !== null) positions.push({ i: tm.index, tok: tm[1] });
-    // find label positions (each language form)
+    // find the label, then the nearest feedbackToken on EITHER side (same menu item)
     for (const lab of ['不感興趣', 'Not interested', 'not interested', 'NotInterested']) {
       let idx = 0;
       while (true) {
         idx = s.indexOf(lab, idx);
         if (idx < 0) break;
-        const after = positions.filter((p) => p.i > idx);
-        if (after.length) {
-          const near = after[0];
-          // only accept a token within a reasonable distance (same menu item)
-          if (near.i - idx < 4000 && near.i < bestIdx) { best = near.tok; bestIdx = near.i; }
+        // nearest token before and after the label
+        let before = null, after = null;
+        for (const p of positions) {
+          if (p.i < idx && (before === null || p.i > before.i)) before = p;
+          if (p.i > idx && (after === null || p.i < after.i)) after = p;
+        }
+        const cand = [
+          before && { gap: idx - before.i, tok: before.tok },
+          after && { gap: after.i - idx, tok: after.tok }
+        ].filter(Boolean).sort((a, b) => a.gap - b.gap)[0];
+        if (cand && cand.gap < 6000 && cand.gap < bestGap) {
+          best = cand.tok; bestGap = cand.gap; bestIdx = idx;
         }
         idx += lab.length;
       }
